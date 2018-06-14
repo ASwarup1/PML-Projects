@@ -1,0 +1,247 @@
+---
+title: "Practical Machine Learning Project - AS"
+author: "A. Swarup"
+date: "June 12, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Overview
+
+In this project we'd build a model to analyze the quality of the activities measured by means of fitness tracker devices like Fitbit, Jawbone Up, Nike FuelBand, etc. By using these devices, persons can get quantitative measurement of the activities that they perform, namely, how much are they doing, but not how well are they doing. For this analysis, we'd use data collected from accelerometers on the belt, forearm, arm, and dumbell of 6 persons. These participants were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: <http://groupware.les.inf.puc-rio.br/har> (see the section on the Weight Lifting Exercise Dataset). Using data from a training dataset, we'd select the predictor variables to be used in our model for the response variable 'classe'. We'd describe how we built our model, using cross validation, expected out of sample error, etc., and the reasons for choosing the particular prediction model over the others. We'd then use this prediction model to predict 20 different test cases in a given test dataset.
+
+## Load the data
+
+The training data for this project are available here:
+
+<https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv>
+
+The test data are available here:
+
+<https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv>
+
+Original source of the data for this project is:
+
+<http://groupware.les.inf.puc-rio.br/har>
+
+R code to download from web and read into R is included as below.
+
+```{r load, message=FALSE, warning=FALSE}
+
+rm(list = ls())
+library(knitr)
+library(ggplot2)
+if (!file.exists("pml-training.csv")) {
+  download.file("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", destfile = "pml-training.csv")
+}
+if (!file.exists("pml-testing.csv")) {
+  download.file("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", destfile = "pml-testing.csv")
+}
+
+Begin_Time <- Sys.time()
+
+in_train <- read.csv('./pml-training.csv', header=T, sep = ",", na.strings = c("", "NA", "#DIV/0!"))
+testing <- read.csv('./pml-testing.csv', header=T, sep = ",", na.strings = c("", "NA", "#DIV/0!"))
+
+```
+
+## View the data
+
+An examination of the two datasets by the following commands revealed that both sets have 160 columns. The training dataset has 19622 observations and the testing set has 20. It was also noted that both datasets have same column names, except the column 160, which is named 'classe' in the training dataset and 'problem-id' in the testing. Relevant code for data examination is given as below.
+
+```{r initial, message=FALSE, warning=FALSE}
+dim(in_train)
+dim(testing)
+setdiff(names(in_train),names(testing))
+setdiff(names(testing),names(in_train))
+table(in_train$classe)
+range(testing$problem_id)
+
+```   
+Combining results of the last two lines of this code with documentation from section on the Weight Lifting Exercise Dataset, we note that:
+
+- The 'classe' column in the training set contains a range of classification identifiers A through E which determine different exercise approaches with A being 'correct' and B - E being different types of mistakes.
+
+- The 'problem_id' column in the test set contains a set of numeric identifies from 1 through 20.
+
+## Clean up the data
+
+We'd remove all columns that contains NA's and remove features that are not in the test dataset. The features containing NA are the variance, mean and standard deviation (SD) within each window for each feature. Since the testing dataset has no time-dependence, these values are of no use to us, and we can disregard those. Also, we'd remove the first seven features since they contain time-series data, and are non-numeric.
+
+```{r cleanup, echo=TRUE}
+features <- names(testing[,colSums(is.na(testing)) == 0])[8:59]
+
+in_train <- in_train[,c(features,"classe")]
+testing <- testing[,c(features,"problem_id")]
+
+dim(in_train)
+dim(testing)
+```   
+Just to remind ourselves, we are going to fit a model with the following column names:
+
+```{r colnames, echo=FALSE}
+sort(features)
+```  
+
+## Correlation Analysis
+
+We should check the correlation among variables before the modeling, as it'd help in analysing the scope of further dimension reduction of training data using PCA. Correlations can be checked with the 'cor' function and printing the resulting matrix. To plot correlations, we could use either the 'corrgram' package or the 'heatmap'. We used the latter approach, i.e., created a matrix of correlation values for each combination and then plotted this as a heatmap as shown in Figure 1 below:
+
+```{r heatmap, echo=FALSE, message=FALSE, warning=FALSE}
+if (!require(gplots)) install.packages("gplots")
+library(gplots)
+# Map <- round(abs(cor(in_train[1:52])),2)
+Map <- round(cor(in_train[1:52]),2)
+diag(Map) <- 0  # Make the diagonal values zero, as these have correlation = 1
+heatmap.2(Map , scale = "column", col = rainbow(64), main="Figure 1: Training Data Correlation")
+
+```   
+
+We notice only small pockets of significant correlation. Accordingly, we decided not to reduce the dimensions of data further, and instead work with all the remaining 52 columns of data.
+
+## Partitioning the Training Dataset
+
+Following the recommendations in Practical Machine Learning Course, we'd partition the supplied 'in_train' dataset between a training data set 'training' and a validation data set 'myTesting', in a 70%-30% ratio. The latter should not be confused with the data in the pml-testing.csv file. We'd use cross validation within the training partition to improve the model fit and then do an out-of-sample test with the validation partition.
+
+```{r partition, message=FALSE, warning=FALSE}
+
+# Partioning the supplied training data into two datasets, 70% for training and 30% for myTesting
+library(caret)
+set.seed(315)
+index <- createDataPartition(y=in_train$classe, p=0.7, list=FALSE)
+training <- in_train[index, ]
+myTesting <- in_train[-index, ]
+
+```  
+## Model Development
+
+In our problem we have multiple numeric measurements of each observation to predict one of the five classifications. This is a classic problem to solve with tree classification or the Random Forest algorithm. However, we would consider additionally the stochastic gradient boosting method for the sake of comparison. The machine learning 'caret' package in R supports all three methods.   
+
+### 1) Classification Decision Tree
+
+We'd first use classification trees to analyze the training dataset. We have to predict the 'classe' variable from rest of the variables in the dataset. We'd use 'rpart' method in the 'train' function of the 'caret' package for predicting the decision tree, and use the 'rpart.plot' package for plotting the decision tree.
+
+We have already divided the downloaded in_train dataset into a 'training' set and another  independent 'myTesting' dataset.
+
+```{r rpart, message=FALSE, warning=FALSE}
+set.seed(111)
+modFitDT <- train(classe ~ ., method='rpart', data=training)
+
+save(modFitDT, file="./ModelDT.RData")
+
+library(rpart.plot)
+rpart.plot(modFitDT$finalModel)
+
+```   
+
+The confusionMatrix function gives the count of how many times the predicted variable mapped correctly to the true values of the classe variable.
+
+```{r rpart2, message=FALSE, warning=FALSE}
+set.seed(345)
+predDT <- predict(modFitDT, myTesting)
+confMatDT <- confusionMatrix(predDT, myTesting$classe)
+print(confMatDT)
+
+```   
+### 2) Boosting
+
+Here we'd use the 'gbm' method (Boosting with Trees) of the 'caret' package for prediction. We use trainControl function to specify sampling parameters in the model. The object that is outputted from traincontrol is provided as an argument for train. See, e.g., the tutorial mentioned below for explanations:
+<http://www.rebeccabarter.com/blog/2017-11-17-caret_tutorial/>
+Again, the Confusion Matrix is generated to validate accuracy of prediction against the independent dataset myTest.
+
+```{r Boost1, message=FALSE, warning=FALSE}
+set.seed(222)
+# Specify the resampling method
+fitControl <- trainControl(method = "repeatedcv",
+                           number = 5, # 5-fold CV
+                           repeats = 1)
+
+modFitBoost <- train(classe ~ ., method = "gbm", data = training,
+                     trControl = fitControl, verbose = F)
+save(modFitBoost, file="./ModelBoost.RData")
+
+```   
+Print and plot of the Boost model's prediction on the training dataset, as well as prediction on the myTest dataset: 
+
+```{r Boost2, message=FALSE, warning=FALSE}
+modFitBoost
+
+set.seed(456)
+predBoost <- predict(modFitBoost, newdata=myTesting)
+confMatBoost <- confusionMatrix(predBoost, myTesting$classe)
+confMatBoost
+```   
+Plot the Boost model's accuracy versus Boosting Iterations.
+
+```{r Boost3, message=FALSE, warning=FALSE}
+# plot(confMatBoost$table, col = confMatBoost$byClass,
+#      main = paste("Boosting - Accuracy =", round(confMatBoost$overall['Accuracy'], 4)))
+# plot(modFitBoost, ylim=c(0.8, 1))
+plot(modFitBoost)
+
+```   
+
+### 3) Random Forest
+
+We'd run the Random Forest algorithm for prediction by using the 'rf' method in the 'caret' package. The standard randomForest() function of R requires tuning of two parameters, namely:
+- **mtry**: Number of variables randomly sampled as candidates at each split, and
+- **ntree**: Number of trees to grow
+In 'caret' only mtry parameter is available for tuning. See, e.g., methods for tuning at: 
+<https://machinelearningmastery.com/tune-machine-learning-algorithms-in-r/>
+However, for the sake of simplicity we'd leave it as default. One can get higher accuracy by increasing ntree - upto a limit - then it flattens. We chose ntree = 100.
+
+```{r RF, message=FALSE, warning=FALSE}
+set.seed(333)
+modFitRF <- train(classe ~ ., method = 'rf', data = training, ntree = 100)
+plot(modFitRF)
+
+save(modFitRF, file='./ModelRF.RData')
+
+set.seed(567)
+predRF <- predict(modFitRF, newdata=myTesting, verbose=FALSE)
+# predRF  # -> This statement would give large output
+confMatRF <- confusionMatrix(predRF, myTesting$classe)
+confMatRF
+
+plot(confMatRF$table, col = confMatRF$byClass, 
+     main = paste("Random Forest - Accuracy =",
+                  round(confMatRF$overall['Accuracy'], 4)))
+
+```
+
+## Accuracies for the three models
+
+```{r Accuracy, message=FALSE, warning=FALSE}
+AccuracyResults <- data.frame(
+  Model = c('Decision Tree', 'Boosting', 'Random Forest'),
+   Accuracy = rbind(confMatDT$overall[1], confMatBoost$overall[1], confMatRF$overall[1]))
+
+print(AccuracyResults)
+
+```
+We notice that both Boosting and Random Forest models outperform the Decision Trees model, with Random Forest being slightly better in accuracy. We perform prediction on the testing dataset using the Random Forest model. 
+
+## Predictions for the given test dataset
+
+```{r final, message=FALSE, warning=FALSE}
+
+predictionRF <- predict(modFitRF, newdata = testing)
+predictionRF
+
+testPredictionResults <- data.frame(
+  problem_id = testing$problem_id,
+  predicted = predictionRF
+)
+print(testPredictionResults)
+
+# File for submission
+write.table(testPredictionResults, "./Prediction-Results.txt", sep=" ", row.names=FALSE)
+
+End_Time  <- Sys.time()
+totalTime <- round(End_Time - Begin_Time, 2)
+print(paste("Total Execution Time = ", totalTime, " mins"))
+
+```   
