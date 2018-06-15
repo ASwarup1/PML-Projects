@@ -41,8 +41,6 @@ if (!file.exists("pml-testing.csv")) {
   download.file("http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", destfile = "pml-testing.csv")
 }
 
-Begin_Time <- Sys.time()
-
 in_train <- read.csv('./pml-training.csv', header=T, sep = ",", na.strings = c("", "NA", "#DIV/0!"))
 testing <- read.csv('./pml-testing.csv', header=T, sep = ",", na.strings = c("", "NA", "#DIV/0!"))
 
@@ -130,8 +128,6 @@ We have already divided the downloaded in_train dataset into a 'training' set an
 set.seed(111)
 modFitDT <- train(classe ~ ., method='rpart', data=training)
 
-save(modFitDT, file="./ModelDT.RData")
-
 library(rpart.plot)
 rpart.plot(modFitDT$finalModel)
 
@@ -148,9 +144,7 @@ print(confMatDT)
 ```   
 ### 2) Boosting
 
-Here we'd use the 'gbm' method (Boosting with Trees) of the 'caret' package for prediction. We use trainControl function to specify sampling parameters in the model. The object that is outputted from traincontrol is provided as an argument for train. See, e.g., the tutorial mentioned below for explanations:
-<http://www.rebeccabarter.com/blog/2017-11-17-caret_tutorial/>
-Again, the Confusion Matrix is generated to validate accuracy of prediction against the independent dataset myTest.
+Here we'd use the 'gbm' method (Boosting with Trees) of the 'caret' package for prediction. We use trainControl function to specify sampling parameters in the model. The object that is outputted from traincontrol is provided as an argument for train. Again, the Confusion Matrix is generated to validate accuracy of prediction against the independent dataset myTest.
 
 ```{r Boost1, message=FALSE, warning=FALSE}
 set.seed(222)
@@ -161,10 +155,10 @@ fitControl <- trainControl(method = "repeatedcv",
 
 modFitBoost <- train(classe ~ ., method = "gbm", data = training,
                      trControl = fitControl, verbose = F)
-save(modFitBoost, file="./ModelBoost.RData")
 
 ```   
-Print and plot of the Boost model's prediction on the training dataset, as well as prediction on the myTest dataset: 
+
+Print the Boost model's predictions on the training dataset, as well as on the myTest dataset: 
 
 ```{r Boost2, message=FALSE, warning=FALSE}
 modFitBoost
@@ -174,31 +168,18 @@ predBoost <- predict(modFitBoost, newdata=myTesting)
 confMatBoost <- confusionMatrix(predBoost, myTesting$classe)
 confMatBoost
 ```   
-Plot the Boost model's accuracy versus Boosting Iterations.
-
-```{r Boost3, message=FALSE, warning=FALSE}
-# plot(confMatBoost$table, col = confMatBoost$byClass,
-#      main = paste("Boosting - Accuracy =", round(confMatBoost$overall['Accuracy'], 4)))
-# plot(modFitBoost, ylim=c(0.8, 1))
-plot(modFitBoost)
-
-```   
 
 ### 3) Random Forest
 
-We'd run the Random Forest algorithm for prediction by using the 'rf' method in the 'caret' package. The standard randomForest() function of R requires tuning of two parameters, namely:
-- **mtry**: Number of variables randomly sampled as candidates at each split, and
-- **ntree**: Number of trees to grow
-In 'caret' only mtry parameter is available for tuning. See, e.g., methods for tuning at: 
-<https://machinelearningmastery.com/tune-machine-learning-algorithms-in-r/>
-However, for the sake of simplicity we'd leave it as default. One can get higher accuracy by increasing ntree - upto a limit - then it flattens. We chose ntree = 100.
+We'd run the Random Forest algorithm for prediction by using the 'rf' method in the 'caret' package. The standard randomForest() function of R requires tuning of two parameters, namely:   
+ - **mtry**: Number of variables randomly sampled as candidates at each split, and
+ - **ntree**: Number of trees to grow   
+In 'caret' only mtry parameter is available for tuning. However, for the sake of simplicity we'd leave it as default. One can get higher accuracy by increasing ntree - upto a limit - then it flattens. We chose ntree = 100.
 
 ```{r RF, message=FALSE, warning=FALSE}
 set.seed(333)
 modFitRF <- train(classe ~ ., method = 'rf', data = training, ntree = 100)
 plot(modFitRF)
-
-save(modFitRF, file='./ModelRF.RData')
 
 set.seed(567)
 predRF <- predict(modFitRF, newdata=myTesting, verbose=FALSE)
@@ -239,9 +220,5 @@ print(testPredictionResults)
 
 # File for submission
 write.table(testPredictionResults, "./Prediction-Results.txt", sep=" ", row.names=FALSE)
-
-End_Time  <- Sys.time()
-totalTime <- round(End_Time - Begin_Time, 2)
-print(paste("Total Execution Time = ", totalTime, " mins"))
 
 ```   
