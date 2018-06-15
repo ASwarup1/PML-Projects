@@ -171,14 +171,16 @@ confMatBoost
 
 ### 3) Random Forest
 
-We'd run the Random Forest algorithm for prediction by using the 'rf' method in the 'caret' package. The standard randomForest() function of R requires tuning of two parameters, namely:   
- - **mtry**: Number of variables randomly sampled as candidates at each split, and
- - **ntree**: Number of trees to grow   
-In 'caret' only mtry parameter is available for tuning. However, for the sake of simplicity we'd leave it as default. One can get higher accuracy by increasing ntree - upto a limit - then it flattens. We chose ntree = 100.
+We'd run the Random Forest algorithm for prediction by using the 'rf' method in the 'caret' package. The standard randomForest() function of R requires tuning of two parameters, namely: **mtry**: Number of variables randomly sampled as candidates at each split, and  **ntree**: Number of trees to grow. In 'caret' only mtry parameter is available for tuning. However, for the sake of simplicity we'd leave it as default. One can get higher accuracy by increasing ntree - upto a limit - then it flattens. In first trial (commented out) we chose ntree = 100. In second iteration (shown below), we chose cross-validation like in the Boosting model discussed before. As in Boosting model, we create a trainControl object to specify 10-Fold Cross Validation one time and pass it to the train function.
 
 ```{r RF, message=FALSE, warning=FALSE}
+
 set.seed(333)
-modFitRF <- train(classe ~ ., method = 'rf', data = training, ntree = 100)
+ctrlRF <- trainControl(method = "repeatedcv", number = 5, repeats = 2)
+# modFitRF <- train(classe ~ ., method = 'rf', data = training, ntree = 100)
+modFitRF  <- train(classe ~ ., data = training, method = "rf",
+                   trControl = ctrlRF, verbose = FALSE)
+modFitRF$finalModel
 plot(modFitRF)
 
 set.seed(567)
