@@ -11,7 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## Overview
 
-In this project we'd build a model to analyze the quality of the activities measured by means of fitness tracker devices like Fitbit, Jawbone Up, Nike FuelBand, etc. By using these devices, persons can get quantitative measurement of the activities that they perform, namely, how much are they doing, but not how well are they doing. For this analysis, we'd use data collected from accelerometers on the belt, forearm, arm, and dumbell of 6 persons. These participants were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: <http://groupware.les.inf.puc-rio.br/har> (see the section on the Weight Lifting Exercise Dataset). Using data from a training dataset, we'd select the predictor variables to be used in our model for the response variable 'classe'. We'd describe how we built our model, using cross validation, expected out of sample error, etc., and the reasons for choosing the particular prediction model over the others. We'd then use this prediction model to predict 20 different test cases in a given test dataset.
+In this project we'd build a model to analyze the quality of the activities measured by means of fitness tracker devices like Fitbit, Jawbone Up, Nike FuelBand, etc. By using these devices, persons can get quantitative measurement of the activities that they perform, namely, how much are they doing, but not how well are they doing. For this analysis, we'd use data collected from accelerometers on the belt, forearm, arm, and dumbbell of 6 persons. These participants were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: <http://groupware.les.inf.puc-rio.br/har> (see the section on the Weight Lifting Exercise Dataset). Using data from a training dataset, we'd select the predictor variables to be used in our model for the response variable 'classe'. We'd describe how we built our model, using cross validation, expected out of sample error, etc., and the reasons for choosing the particular prediction model over the others. We'd then use this prediction model to predict 20 different test cases in a given test dataset.
 
 ## Load the data
 
@@ -86,7 +86,7 @@ sort(features)
 
 ## Correlation Analysis
 
-We should check the correlation among variables before the modeling, as it'd help in analysing the scope of further dimension reduction of training data using PCA. Correlations can be checked with the 'cor' function and printing the resulting matrix. To plot correlations, we could use either the 'corrgram' package or the 'heatmap'. We used the latter approach, i.e., created a matrix of correlation values for each combination and then plotted this as a heatmap as shown in Figure 1 below:
+We should check the correlation among variables before the modeling, as it'd help in analyzing the scope of further dimension reduction of training data using PCA. Correlations can be checked with the 'cor' function and printing the resulting matrix. To plot correlations, we could use either the 'corrgram' package or the 'heatmap'. We used the latter approach, i.e., created a matrix of correlation values for each combination and then plotted this as a heatmap as shown in Figure 1 below:
 
 ```{r heatmap, echo=FALSE, message=FALSE, warning=FALSE}
 if (!require(gplots)) install.packages("gplots")
@@ -96,13 +96,13 @@ Map <- round(cor(in_train[1:52]),2)
 diag(Map) <- 0  # Make the diagonal values zero, as these have correlation = 1
 heatmap.2(Map , scale = "column", col = rainbow(64), main="Figure 1: Training Data Correlation")
 
-```   
+```    
 
 We notice only small pockets of significant correlation. Accordingly, we decided not to reduce the dimensions of data further, and instead work with all the remaining 52 columns of data.
 
 ## Partitioning the Training Dataset
 
-Following the recommendations in Practical Machine Learning Course, we'd partition the supplied 'in_train' dataset between a training data set 'training' and a validation data set 'myTesting', in a 70%-30% ratio. The latter should not be confused with the data in the pml-testing.csv file. We'd use cross validation within the training partition to improve the model fit and then do an out-of-sample test with the validation partition.
+Following the recommendations in Practical Machine Learning Course, we'd partition the supplied 'in_train' dataset between a training data set 'training' and a validation data set 'myTesting', in a 70-30 ratio. The latter should not be confused with the data in the pml-testing.csv file. We'd use cross validation within the training partition to improve the model fit and then do an out-of-sample test with the validation partition.
 
 ```{r partition, message=FALSE, warning=FALSE}
 
@@ -112,6 +112,7 @@ set.seed(315)
 index <- createDataPartition(y=in_train$classe, p=0.7, list=FALSE)
 training <- in_train[index, ]
 myTesting <- in_train[-index, ]
+
 
 ```  
 ## Model Development
@@ -129,7 +130,7 @@ set.seed(111)
 modFitDT <- train(classe ~ ., method='rpart', data=training)
 
 library(rpart.plot)
-rpart.plot(modFitDT$finalModel)
+rpart.plot(modFitDT$finalModel, main = "Figure 2: Classification Tree")
 
 ```   
 
@@ -171,17 +172,25 @@ confMatBoost
 
 ### 3) Random Forest
 
-We'd run the Random Forest algorithm for prediction by using the 'rf' method in the 'caret' package. The standard randomForest() function of R requires tuning of two parameters, namely: **mtry**: Number of variables randomly sampled as candidates at each split, and  **ntree**: Number of trees to grow. In 'caret' only mtry parameter is available for tuning. However, for the sake of simplicity we'd leave it as default. One can get higher accuracy by increasing ntree - upto a limit - then it flattens. In first trial (commented out) we chose ntree = 100. In second iteration (shown below), we chose cross-validation like in the Boosting model discussed before. As in Boosting model, we create a trainControl object to specify 10-Fold Cross Validation one time and pass it to the train function.
+We'd run the Random Forest algorithm for prediction by using the 'rf' method in the 'caret' package. The standard randomForest() function of R requires tuning of two parameters, namely: **mtry**: Number of variables randomly sampled as candidates at each split, and  **ntree**: Number of trees to grow. In 'caret' only mtry parameter is available for tuning. However, for the sake of simplicity we could leave it as default. One can get higher accuracy by increasing ntree - upto a limit - then it flattens. In first trial (commented out) we chose ntree = 100. In second and third iterations, we chose cross-validation similar to the Boosting model discussed before. However, (finally) unlike in Boosting model, we chose "out-of-bag" method with ten repeats, as it offers improved performance over K-fold for random forest models.
 
 ```{r RF, message=FALSE, warning=FALSE}
 
 set.seed(333)
-ctrlRF <- trainControl(method = "repeatedcv", number = 5, repeats = 2)
+# Alternative 3 (used): Set control for train function
+# Uses out-of-bag cross validation, runs faster
+tr <- trainControl(method = "oob", number = 10, allowParallel = TRUE)
+
+# Alternative 2: trainControl method below specifies 10-Fold Cross Validation
+# Object calculated one time and passed to the train function. train ran v. slow.
+# ctrlRF <- trainControl(method = "repeatedcv", number = 5, repeats = 2)
+
+# Alternative 1: No cross-validation
 # modFitRF <- train(classe ~ ., method = 'rf', data = training, ntree = 100)
 modFitRF  <- train(classe ~ ., data = training, method = "rf",
-                   trControl = ctrlRF, verbose = FALSE)
+                   trControl = tr, verbose = FALSE)
 modFitRF$finalModel
-plot(modFitRF)
+plot(modFitRF, log = "y", lwd = 2, main = "Figure 3: Random Forest Accuracy vs. No. of Predictors", xlab = "Predictors", ylab = "Accuracy")
 
 set.seed(567)
 predRF <- predict(modFitRF, newdata=myTesting, verbose=FALSE)
@@ -190,7 +199,7 @@ confMatRF <- confusionMatrix(predRF, myTesting$classe)
 confMatRF
 
 plot(confMatRF$table, col = confMatRF$byClass, 
-     main = paste("Random Forest - Accuracy =",
+     main = paste("Figure 4: Random Forest Conf. Matrix Table - Our Accuracy =",
                   round(confMatRF$overall['Accuracy'], 4)))
 
 ```
@@ -206,6 +215,22 @@ print(AccuracyResults)
 
 ```
 We notice that both Boosting and Random Forest models outperform the Decision Trees model, with Random Forest being slightly better in accuracy. We perform prediction on the testing dataset using the Random Forest model. 
+
+## Chosen Model and Out of Sample Error
+
+As mentioned above, the Random Forest model is our model of choice. The "in sample error" is 0.58% - Calculated as (1-.9942)*100. To calculate the "out of sample error", we would calculate ratio of how many were predicted correctly in our validation sample (myTesting) to the no. of samples in that dataset. This calculation is shown below:
+
+```{r calcerror, message = FALSE, warning = FALSE}
+length(myTesting$classe) # no. in myTesting dataset - same as length(predRF)
+sum(predRF == myTesting$classe) # no. predicted correctly
+validationAccuracy <- sum(predRF == myTesting$classe)/length(predRF)
+outOfSampleError <- 1 - validationAccuracy
+# Out of sample error in percentage
+e <- outOfSampleError * 100
+paste0("Out of sample estimation error is: ", round(e, digits = 2), "%")
+
+```   
+It turns out that our out-of-sample error percentage is same as the in-sample error.
 
 ## Predictions for the given test dataset
 
